@@ -1,10 +1,14 @@
 # NOTE: This script is intended to be run in a local environment with required packages installed.
-# Required packages: streamlit, PyMuPDF, openai, pandas
-# Install using: pip install streamlit pymupdf openai pandas
+# Required packages: streamlit, PyMuPDF, openai, pandas, python-dotenv
+# Install using: pip install streamlit pymupdf openai pandas python-dotenv
 
 import os
 import pandas as pd
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Try importing optional packages, but don't exit if missing
 try:
@@ -19,7 +23,7 @@ except ModuleNotFoundError as e:
 
 # If Streamlit isn't available, show an error and exit gracefully
 if st is None:
-    print("[ERROR] Streamlit is not available. Please install with: pip install streamlit pymupdf openai pandas")
+    print("[ERROR] Streamlit is not available. Please install with: pip install streamlit pymupdf openai pandas python-dotenv")
 else:
     # Title
     st.title("📊 Management Rating System - Ganesh Housing Prototype")
@@ -54,7 +58,7 @@ else:
         return text
 
     # Generate auto-ratings using GPT
-    @st.cache_data(show_spinner=False)
+    @st.cache(show_spinner=False)
     def generate_auto_rating(prompt_text):
         if openai is None:
             st.error("OpenAI module not found. Please install it locally with: pip install openai")
@@ -124,6 +128,15 @@ else:
             history_df = pd.concat([history_df, pd.DataFrame([new_row])], ignore_index=True)
             history_df.to_csv(history_file, index=False)
 
+            # Allow export of latest result
+            csv_output = pd.DataFrame([new_row]).to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📤 Download This Rating as CSV",
+                data=csv_output,
+                file_name=f"{company_name}_management_rating.csv",
+                mime="text/csv",
+            )
+
     # Display history
     st.markdown("---")
     st.subheader("📈 Historical Ratings")
@@ -134,4 +147,3 @@ else:
         st.line_chart(chart_data.set_index("Date"))
     else:
         st.info("No historical data available yet.")
-<REPLACE_WITH_YOUR_STREAMLIT_APP_CODE>
