@@ -174,13 +174,15 @@ else:
 
         with tab2:
             for cat in categories:
-                trend_data = history_df[["Quarter", cat]].dropna()
-                if not trend_data.empty:
-                    st.line_chart(trend_data.set_index("Quarter"), height=250, use_container_width=True)
+                if "Quarter" in history_df.columns:
+                    trend_data = history_df[["Quarter", cat]].dropna()
+                    if not trend_data.empty:
+                        st.line_chart(trend_data.set_index("Quarter"), height=250, use_container_width=True)
 
         with tab3:
-            chart_data = history_df.groupby("Quarter")["Average"].mean().reset_index()
-            st.line_chart(chart_data.set_index("Quarter"))
+            if "Quarter" in history_df.columns:
+                chart_data = history_df.groupby("Quarter")["Average"].mean().reset_index()
+                st.line_chart(chart_data.set_index("Quarter"))
 
         with tab4:
             st.warning("⚠️ This will delete all historical records!")
