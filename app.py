@@ -6,6 +6,7 @@ import os
 import pandas as pd
 from datetime import datetime
 from dotenv import load_dotenv
+import ast
 
 # Load environment variables from .env file
 load_dotenv()
@@ -58,26 +59,30 @@ else:
         return text
 
     # Generate auto-ratings using GPT
-    @st.cache(show_spinner=False)
     def generate_auto_rating(prompt_text):
         if openai is None:
             st.error("OpenAI module not found. Please install it locally with: pip install openai")
             return {}
-        openai.api_key = os.getenv("OPENAI_API_KEY")
-        if not openai.api_key:
-            st.error("OPENAI_API_KEY environment variable not set.")
-            return {}
+
+        openai.api_key = st.secrets["OPENAI_API_KEY"]
 
         system_prompt = "Rate the company's management on a scale of 0 to 5 for each of the following categories: Strategy & Vision, Execution & Delivery, Handling Tough Phases, Communication Clarity, Capital Allocation, Governance & Integrity, Outlook & Realism. Provide just the scores in a dictionary format."
 
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt_text}
-            ]
-        )
-        return eval(response.choices[0].message['content'])
+        try:
+            response = openai.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt_text}
+                ]
+            )
+            response_text = response.choices[0].message.content
+            rating_dict = ast.literal_eval(response_text)
+            if not isinstance(rating_dict, dict):
+                return {"error": "Parsed response is not a dictionary."}
+            return rating_dict
+        except Exception as e:
+            return {"error": str(e)}
 
     # Load or initialize history
     history_file = "management_ratings.csv"
@@ -101,10 +106,15 @@ else:
                 rating_scores[category] = st.slider(category, 0, 5, 3)
         else:
             st.subheader("Generating Auto-Rating...")
-            with st.spinner("Analyzing transcript with GPT..."):
-                rating_scores = generate_auto_rating(extracted_text[:6000])
+            if st.button("Run AI Evaluation"):
+                with st.spinner("Analyzing transcript with GPT..."):
+                    result = generate_auto_rating(extracted_text[:6000])
+                    if "error" in result:
+                        st.error(f"GPT Error: {result['error']}")
+                    else:
+                        rating_scores.update(result)
 
-        if st.button("Generate Summary"):
+        if st.button("Generate Summary") and all(score > 0 for score in rating_scores.values()):
             avg_score = sum(rating_scores.values()) / len(categories)
 
             st.markdown("---")
