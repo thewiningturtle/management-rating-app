@@ -31,10 +31,10 @@ else:
     st.set_page_config(layout="wide")
 
     # Title
-    st.title("📊 Management Rating System - Ganesh Housing Prototype")
+    st.title("📊 Management Rating System")
 
     # File uploader
-    uploaded_file = st.file_uploader("Upload an Earnings Call Transcript (PDF)", type=["pdf"])
+    uploaded_files = st.file_uploader("Upload One or More Earnings Call Transcripts (PDFs)", type=["pdf"], accept_multiple_files=True)
 
     # Define rating categories
     categories = [
@@ -64,6 +64,15 @@ else:
         if match:
             return f"Q{match.group(1)} FY{match.group(2)}"
         return "Unknown"
+
+    def extract_company_name(text):
+        match = re.search(r"(?:Company|Corporate)\s+Name\s*[:\-]?\s*(.*?)(?:\n|\r|\.|,)", text, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+        header_match = re.search(r"^\s*(.*?)\s*(?:Limited|Ltd\.|Incorporated|Inc\.|Group|Corp)\b", text, re.IGNORECASE | re.MULTILINE)
+        if header_match:
+            return header_match.group(0).strip()
+        return "Unknown Company"
 
     # Generate auto-ratings using GPT
     def generate_auto_rating(prompt_text):
@@ -114,70 +123,67 @@ Output strictly in a Python dictionary with category names as keys and scores (0
     else:
         history_df = pd.DataFrame(columns=["Date", "Company", "Quarter"] + categories + ["Average"])
 
-    # Display form if file is uploaded
-    if uploaded_file:
-        extracted_text = extract_text_from_pdf(uploaded_file)
-        quarter = extract_quarter_info(extracted_text)
-        st.subheader("Transcript Preview")
-        st.text_area("Extracted Transcript Text (partial)", extracted_text[:3000], height=300)
+    # Process uploaded files
+    if uploaded_files:
+        for uploaded_file in uploaded_files:
+            extracted_text = extract_text_from_pdf(uploaded_file)
+            quarter = extract_quarter_info(extracted_text)
+            company_name = extract_company_name(extracted_text)
+            st.subheader(f"Transcript Preview: {uploaded_file.name}")
+            st.text_area("Extracted Transcript Text (partial)", extracted_text[:3000], height=300)
 
-        company_name = st.text_input("Enter Company Name", value="Ganesh Housing")
-        mode = st.radio("Choose Rating Mode", ["Auto Rating (AI)", "Manual Rating"])
+            mode = st.radio(f"Choose Rating Mode for {uploaded_file.name}", ["Auto Rating (AI)", "Manual Rating"], key=uploaded_file.name)
 
-        if mode == "Manual Rating":
-            st.subheader("Rate the Management (0 to 5)")
-            st.session_state.rating_scores = {category: st.slider(category, 0, 5, 3) for category in categories}
-
-        else:
-            st.subheader("Generating Auto-Rating...")
-            if st.button("Run AI Evaluation"):
-                with st.spinner("Analyzing transcript with GPT..."):
-                    result = generate_auto_rating(extracted_text[:6000])
-                    if "error" in result:
-                        st.error(f"GPT Error: {result['error']}")
-                    else:
-                        st.session_state.rating_scores = result
+            if mode == "Manual Rating":
+                st.subheader("Rate the Management (0 to 5)")
+                rating_scores = {category: st.slider(category, 0, 5, 3, key=f"{uploaded_file.name}_{category}") for category in categories}
+            else:
+                st.subheader("Generating Auto-Rating...")
+                if st.button(f"Run AI Evaluation for {uploaded_file.name}"):
+                    with st.spinner("Analyzing transcript with GPT..."):
+                        result = generate_auto_rating(extracted_text[:6000])
+                        if "error" in result:
+                            st.error(f"GPT Error: {result['error']}")
+                            continue
+                        rating_scores = result
                         st.success("✅ AI-based Ratings Generated!")
                         for cat in categories:
-                            st.write(f"**{cat}:** {result[cat]}")
+                            st.write(f"**{cat}:** {rating_scores[cat]}")
 
-        if st.button("Generate Summary") and "rating_scores" in st.session_state:
-            rating_scores = st.session_state.rating_scores
-            avg_score = sum(rating_scores.values()) / len(categories)
+            if st.button(f"Generate Summary for {uploaded_file.name}"):
+                avg_score = sum(rating_scores.values()) / len(categories)
 
-            st.markdown("---")
-            st.header("📋 Management Evaluation Summary")
-            for cat in categories:
-                st.write(f"**{cat}:** {rating_scores[cat]}/5")
+                st.markdown("---")
+                st.header("📋 Management Evaluation Summary")
+                for cat in categories:
+                    st.write(f"**{cat}:** {rating_scores[cat]}/5")
 
-            st.markdown(f"**Overall Management Rating:** {avg_score:.2f} / 5")
+                st.markdown(f"**Overall Management Rating:** {avg_score:.2f} / 5")
 
-            if avg_score >= 4.5:
-                st.success("Excellent Management - Highly Consistent & Trustworthy")
-            elif avg_score >= 3.5:
-                st.info("Good Management - Performing with Stability")
-            else:
-                st.warning("Needs Further Review - Track Closely")
+                if avg_score >= 4.5:
+                    st.success("Excellent Management - Highly Consistent & Trustworthy")
+                elif avg_score >= 3.5:
+                    st.info("Good Management - Performing with Stability")
+                else:
+                    st.warning("Needs Further Review - Track Closely")
 
-            # Save result to history
-            new_row = {
-                "Date": datetime.now().strftime("%Y-%m-%d"),
-                "Company": company_name,
-                "Quarter": quarter
-            }
-            new_row.update(rating_scores)
-            new_row["Average"] = avg_score
-            history_df = pd.concat([history_df, pd.DataFrame([new_row])], ignore_index=True)
-            history_df.to_csv(history_file, index=False)
+                new_row = {
+                    "Date": datetime.now().strftime("%Y-%m-%d"),
+                    "Company": company_name,
+                    "Quarter": quarter
+                }
+                new_row.update(rating_scores)
+                new_row["Average"] = avg_score
+                history_df = pd.concat([history_df, pd.DataFrame([new_row])], ignore_index=True)
+                history_df.to_csv(history_file, index=False)
 
-            # Allow export of latest result
-            csv_output = pd.DataFrame([new_row]).to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📤 Download This Rating as CSV",
-                data=csv_output,
-                file_name=f"{company_name}_management_rating.csv",
-                mime="text/csv",
-            )
+                csv_output = pd.DataFrame([new_row]).to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📤 Download This Rating as CSV",
+                    data=csv_output,
+                    file_name=f"{company_name}_management_rating.csv",
+                    mime="text/csv",
+                )
 
     # Display history
     st.markdown("---")
