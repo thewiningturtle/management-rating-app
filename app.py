@@ -23,58 +23,38 @@ except ModuleNotFoundError as e:
     openai = None
     print("[WARNING] Some packages are not available. This script must be run locally with required packages installed.")
 
-# If Streamlit isn't available, show an error and exit gracefully
 if st is None:
     print("[ERROR] Streamlit is not available. Please install with: pip install streamlit pymupdf openai pandas python-dotenv")
 else:
-    # Page config
     st.set_page_config(layout="wide")
-
-    # Title
     st.title("📊 Management Rating System")
 
-    # File uploader
     uploaded_files = st.file_uploader("Upload One or More Earnings Call Transcripts (PDFs)", type=["pdf"], accept_multiple_files=True)
 
-    # Define rating categories
     categories = [
-        "Strategy & Vision",
-        "Execution & Delivery",
-        "Handling Tough Phases",
-        "Communication Clarity",
-        "Capital Allocation",
-        "Governance & Integrity",
-        "Outlook & Realism"
+        "Strategy & Vision", "Execution & Delivery", "Handling Tough Phases",
+        "Communication Clarity", "Capital Allocation",
+        "Governance & Integrity", "Outlook & Realism"
     ]
 
-    # Extract text from PDF
     def extract_text_from_pdf(pdf_file):
         if fitz is None:
             st.error("PyMuPDF is not available. Please install it locally with: pip install pymupdf")
             return ""
         doc = fitz.open(stream=pdf_file.read(), filetype="pdf")
-        text = ""
-        for page in doc:
-            text += page.get_text()
-        return text
+        return "".join([page.get_text() for page in doc])
 
-    # Parse quarter info
     def extract_quarter_info(text):
         match = re.search(r"Q(\d) FY'? ?(\d{2,4})", text, re.IGNORECASE)
-        if match:
-            return f"Q{match.group(1)} FY{match.group(2)}"
-        return "Unknown"
+        return f"Q{match.group(1)} FY{match.group(2)}" if match else "Unknown"
 
     def extract_company_name(text):
         match = re.search(r"(?:Company|Corporate)\s+Name\s*[:\-]?\s*(.*?)(?:\n|\r|\.|,)", text, re.IGNORECASE)
         if match:
             return match.group(1).strip()
         header_match = re.search(r"^\s*(.*?)\s*(?:Limited|Ltd\.|Incorporated|Inc\.|Group|Corp)\b", text, re.IGNORECASE | re.MULTILINE)
-        if header_match:
-            return header_match.group(0).strip()
-        return "Unknown Company"
+        return header_match.group(0).strip() if header_match else "Unknown Company"
 
-    # Generate auto-ratings using GPT
     def generate_auto_rating(prompt_text):
         if openai is None:
             st.error("OpenAI module not found. Please install it locally with: pip install openai")
@@ -110,21 +90,17 @@ Output strictly in a Python dictionary with category names as keys and scores (0
             )
             response_text = response.choices[0].message.content
             rating_dict = ast.literal_eval(response_text.split("\n\n")[0])
-            if not isinstance(rating_dict, dict):
-                return {"error": "Parsed response is not a dictionary."}
-            return rating_dict
+            return rating_dict if isinstance(rating_dict, dict) else {"error": "Parsed response is not a dictionary."}
         except Exception as e:
             return {"error": str(e)}
 
-    # Load or initialize history
     history_file = "management_ratings.csv"
-    if os.path.exists(history_file):
-        history_df = pd.read_csv(history_file)
-    else:
-        history_df = pd.DataFrame(columns=["Date", "Company", "Quarter"] + categories + ["Average"])
+    history_df = pd.read_csv(history_file) if os.path.exists(history_file) else pd.DataFrame(columns=["Date", "Company", "Quarter"] + categories + ["Average"])
 
-    # Process uploaded files
     if uploaded_files:
+        if "ratings" not in st.session_state:
+            st.session_state["ratings"] = {}
+
         for uploaded_file in uploaded_files:
             extracted_text = extract_text_from_pdf(uploaded_file)
             quarter = extract_quarter_info(extracted_text)
@@ -137,6 +113,8 @@ Output strictly in a Python dictionary with category names as keys and scores (0
             if mode == "Manual Rating":
                 st.subheader("Rate the Management (0 to 5)")
                 rating_scores = {category: st.slider(category, 0, 5, 3, key=f"{uploaded_file.name}_{category}") for category in categories}
+                st.session_state.ratings[uploaded_file.name] = rating_scores
+
             else:
                 st.subheader("Generating Auto-Rating...")
                 if st.button(f"Run AI Evaluation for {uploaded_file.name}"):
@@ -144,68 +122,66 @@ Output strictly in a Python dictionary with category names as keys and scores (0
                         result = generate_auto_rating(extracted_text[:6000])
                         if "error" in result:
                             st.error(f"GPT Error: {result['error']}")
-                            continue
-                        rating_scores = result
-                        st.success("✅ AI-based Ratings Generated!")
-                        for cat in categories:
-                            st.write(f"**{cat}:** {rating_scores[cat]}")
+                        else:
+                            st.success("✅ AI-based Ratings Generated!")
+                            for cat in categories:
+                                st.write(f"**{cat}:** {result[cat]}")
+                            st.session_state.ratings[uploaded_file.name] = result
 
             if st.button(f"Generate Summary for {uploaded_file.name}"):
-                avg_score = sum(rating_scores.values()) / len(categories)
+                if uploaded_file.name in st.session_state.ratings:
+                    rating_scores = st.session_state.ratings[uploaded_file.name]
+                    avg_score = sum(rating_scores.values()) / len(categories)
 
-                st.markdown("---")
-                st.header("📋 Management Evaluation Summary")
-                for cat in categories:
-                    st.write(f"**{cat}:** {rating_scores[cat]}/5")
+                    st.markdown("---")
+                    st.header("📋 Management Evaluation Summary")
+                    for cat in categories:
+                        st.write(f"**{cat}:** {rating_scores[cat]}/5")
+                    st.markdown(f"**Overall Management Rating:** {avg_score:.2f} / 5")
 
-                st.markdown(f"**Overall Management Rating:** {avg_score:.2f} / 5")
+                    if avg_score >= 4.5:
+                        st.success("Excellent Management - Highly Consistent & Trustworthy")
+                    elif avg_score >= 3.5:
+                        st.info("Good Management - Performing with Stability")
+                    else:
+                        st.warning("Needs Further Review - Track Closely")
 
-                if avg_score >= 4.5:
-                    st.success("Excellent Management - Highly Consistent & Trustworthy")
-                elif avg_score >= 3.5:
-                    st.info("Good Management - Performing with Stability")
+                    new_row = {
+                        "Date": datetime.now().strftime("%Y-%m-%d"),
+                        "Company": company_name,
+                        "Quarter": quarter
+                    }
+                    new_row.update(rating_scores)
+                    new_row["Average"] = avg_score
+                    history_df = pd.concat([history_df, pd.DataFrame([new_row])], ignore_index=True)
+                    history_df.to_csv(history_file, index=False)
+
+                    csv_output = pd.DataFrame([new_row]).to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📤 Download This Rating as CSV",
+                        data=csv_output,
+                        file_name=f"{company_name}_management_rating.csv",
+                        mime="text/csv",
+                    )
                 else:
-                    st.warning("Needs Further Review - Track Closely")
+                    st.warning("⚠️ Please run AI Evaluation or Manual Rating before generating summary.")
 
-                new_row = {
-                    "Date": datetime.now().strftime("%Y-%m-%d"),
-                    "Company": company_name,
-                    "Quarter": quarter
-                }
-                new_row.update(rating_scores)
-                new_row["Average"] = avg_score
-                history_df = pd.concat([history_df, pd.DataFrame([new_row])], ignore_index=True)
-                history_df.to_csv(history_file, index=False)
-
-                csv_output = pd.DataFrame([new_row]).to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📤 Download This Rating as CSV",
-                    data=csv_output,
-                    file_name=f"{company_name}_management_rating.csv",
-                    mime="text/csv",
-                )
-
-    # Display history
     st.markdown("---")
     st.subheader("📈 Historical Ratings")
     if not history_df.empty:
         tab1, tab2, tab3, tab4 = st.tabs(["📋 Table View", "📊 Trend Chart", "📈 Average Trend", "🗑️ Reset Table"])
-
         with tab1:
             st.dataframe(history_df, use_container_width=True)
-
         with tab2:
             for cat in categories:
                 if "Quarter" in history_df.columns:
                     trend_data = history_df[["Quarter", cat]].dropna()
                     if not trend_data.empty:
                         st.line_chart(trend_data.set_index("Quarter"), height=250, use_container_width=True)
-
         with tab3:
             if "Quarter" in history_df.columns:
                 chart_data = history_df.groupby("Quarter")["Average"].mean().reset_index()
                 st.line_chart(chart_data.set_index("Quarter"))
-
         with tab4:
             st.warning("⚠️ This will delete all historical records!")
             if st.button("Clear All Ratings"):
