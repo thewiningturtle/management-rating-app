@@ -113,8 +113,11 @@ else:
                         st.error(f"GPT Error: {result['error']}")
                     else:
                         rating_scores.update(result)
+                        st.success("✅ AI-based Ratings Generated!")
+                        for cat in categories:
+                            st.write(f"**{cat}:** {rating_scores[cat]}")
 
-        if st.button("Generate Summary") and all(score > 0 for score in rating_scores.values()):
+        if st.button("Generate Summary") and all(category in rating_scores for category in categories):
             avg_score = sum(rating_scores.values()) / len(categories)
 
             st.markdown("---")
