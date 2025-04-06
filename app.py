@@ -76,7 +76,10 @@ else:
                     {"role": "user", "content": prompt_text}
                 ]
             )
+            st.write("🔍 Raw GPT Response:", response)
             response_text = response.choices[0].message.content
+            st.write("📥 GPT Message Content:", response_text)
+            
             rating_dict = ast.literal_eval(response_text)
             if not isinstance(rating_dict, dict):
                 return {"error": "Parsed response is not a dictionary."}
