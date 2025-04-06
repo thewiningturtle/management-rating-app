@@ -73,7 +73,23 @@ else:
 
         openai.api_key = st.secrets["OPENAI_API_KEY"]
 
-        system_prompt = "Rate the company's management on a scale of 0 to 5 for each of the following categories: Strategy & Vision, Execution & Delivery, Handling Tough Phases, Communication Clarity, Capital Allocation, Governance & Integrity, Outlook & Realism. Provide just the scores in a dictionary format."
+        system_prompt = """
+You are a forensic financial analyst with expertise in evaluating company management through earnings call transcripts.
+
+Your job is to analyze the following transcript and rate the company’s management (scale of 0 to 5) on these 7 categories. Be strict, unbiased, and highlight any red flags:
+
+1. Strategy & Vision – Is their plan well-articulated and future-aligned?
+2. Execution & Delivery – Do they demonstrate actual results?
+3. Handling Tough Phases – Are they transparent and accountable during challenges?
+4. Communication Clarity – Is their language clear, direct, and data-supported?
+5. Capital Allocation – Is there logic behind their capital usage (buybacks, dividends, lending)?
+6. Governance & Integrity – Do they demonstrate honesty, control, and compliance?
+7. Outlook & Realism – Are projections realistic or overly optimistic?
+
+If anything seems evasive, vague, inconsistent, or risky – give low scores and note it.
+
+Output strictly in a Python dictionary with category names as keys and scores (0–5) as values.
+"""
 
         try:
             response = openai.chat.completions.create(
@@ -84,7 +100,7 @@ else:
                 ]
             )
             response_text = response.choices[0].message.content
-            rating_dict = ast.literal_eval(response_text)
+            rating_dict = ast.literal_eval(response_text.split("\n\n")[0])
             if not isinstance(rating_dict, dict):
                 return {"error": "Parsed response is not a dictionary."}
             return rating_dict
