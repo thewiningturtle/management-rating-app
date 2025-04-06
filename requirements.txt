@@ -2,3 +2,4 @@ streamlit[default]
 pymupdf
 openai
 pandas
+python-dotenv
