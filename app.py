@@ -76,10 +76,7 @@ else:
                     {"role": "user", "content": prompt_text}
                 ]
             )
-            st.write("🔍 Raw GPT Response:", response)
             response_text = response.choices[0].message.content
-            st.write("📥 GPT Message Content:", response_text)
-            
             rating_dict = ast.literal_eval(response_text)
             if not isinstance(rating_dict, dict):
                 return {"error": "Parsed response is not a dictionary."}
@@ -92,7 +89,7 @@ else:
     if os.path.exists(history_file):
         history_df = pd.read_csv(history_file)
     else:
-        history_df = pd.DataFrame(columns=["Date", "Company"] + categories + ["Average"])
+        history_df = pd.DataFrame(columns=["Date", "Company", "Transcript"] + categories + ["Average"])
 
     # Display form if file is uploaded
     if uploaded_file:
@@ -135,7 +132,11 @@ else:
                 st.warning("Needs Further Review - Track Closely")
 
             # Save result to history
-            new_row = {"Date": datetime.now().strftime("%Y-%m-%d"), "Company": company_name}
+            new_row = {
+                "Date": datetime.now().strftime("%Y-%m-%d"),
+                "Company": company_name,
+                "Transcript": uploaded_file.name
+            }
             new_row.update(rating_scores)
             new_row["Average"] = avg_score
             history_df = pd.concat([history_df, pd.DataFrame([new_row])], ignore_index=True)
