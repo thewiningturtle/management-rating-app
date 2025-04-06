@@ -8,6 +8,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 import ast
 import re
+from collections import defaultdict
 
 # Load environment variables from .env file
 load_dotenv()
@@ -49,11 +50,10 @@ else:
         return f"Q{match.group(1)} FY{match.group(2)}" if match else "Unknown"
 
     def extract_company_name(text):
-        match = re.search(r"(?:Company|Corporate)\s+Name\s*[:\-]?\s*(.*?)(?:\n|\r|\.|,)", text, re.IGNORECASE)
+        match = re.search(r"(?i)(?:welcome to|from)\s+([A-Z][\w\s&.-]+?)(?:\s+(?:Limited|Ltd\.|Inc\.|Group|Corporation|Corp\.|Bank))?\b", text)
         if match:
             return match.group(1).strip()
-        header_match = re.search(r"^\s*(.*?)\s*(?:Limited|Ltd\.|Incorporated|Inc\.|Group|Corp)\b", text, re.IGNORECASE | re.MULTILINE)
-        return header_match.group(0).strip() if header_match else "Unknown Company"
+        return "Unknown Company"
 
     def generate_auto_rating(prompt_text):
         if openai is None:
@@ -80,19 +80,27 @@ If anything seems evasive, vague, inconsistent, or risky – give low scores and
 Output strictly in a Python dictionary with category names as keys and scores (0–5) as values.
 """
 
-        try:
-            response = openai.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt_text}
-                ]
-            )
-            response_text = response.choices[0].message.content
-            rating_dict = ast.literal_eval(response_text.split("\n\n")[0])
-            return rating_dict if isinstance(rating_dict, dict) else {"error": "Parsed response is not a dictionary."}
-        except Exception as e:
-            return {"error": str(e)}
+        chunks = [prompt_text[i:i+4000] for i in range(0, len(prompt_text), 4000)]
+        combined_scores = defaultdict(list)
+
+        for chunk in chunks:
+            try:
+                response = openai.chat.completions.create(
+                    model="gpt-4",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": chunk}
+                    ]
+                )
+                response_text = response.choices[0].message.content
+                rating_dict = ast.literal_eval(response_text.split("\n\n")[0])
+                if isinstance(rating_dict, dict):
+                    for k, v in rating_dict.items():
+                        combined_scores[k].append(v)
+            except Exception as e:
+                return {"error": str(e)}
+
+        return {k: min(v) for k, v in combined_scores.items() if k in categories}
 
     history_file = "management_ratings.csv"
     history_df = pd.read_csv(history_file) if os.path.exists(history_file) else pd.DataFrame(columns=["Date", "Company", "Quarter"] + categories + ["Average"])
@@ -119,7 +127,7 @@ Output strictly in a Python dictionary with category names as keys and scores (0
                 st.subheader("Generating Auto-Rating...")
                 if st.button(f"Run AI Evaluation for {uploaded_file.name}"):
                     with st.spinner("Analyzing transcript with GPT..."):
-                        result = generate_auto_rating(extracted_text[:6000])
+                        result = generate_auto_rating(extracted_text)
                         if "error" in result:
                             st.error(f"GPT Error: {result['error']}")
                         else:
