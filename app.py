@@ -158,10 +158,19 @@ else:
     st.markdown("---")
     st.subheader("📈 Historical Ratings")
     if not history_df.empty:
-        with st.expander("🔍 View Full Historical Table", expanded=True):
+        tab1, tab2, tab3 = st.tabs(["📋 Table View", "📊 Trend Chart", "📈 Average Trend"])
+
+        with tab1:
             st.dataframe(history_df, use_container_width=True)
 
-        chart_data = history_df.groupby("Date")["Average"].mean().reset_index()
-        st.line_chart(chart_data.set_index("Date"))
+        with tab2:
+            for cat in categories:
+                trend_data = history_df[["Date", cat]].dropna()
+                if not trend_data.empty:
+                    st.line_chart(trend_data.set_index("Date"), height=250, use_container_width=True)
+
+        with tab3:
+            chart_data = history_df.groupby("Date")["Average"].mean().reset_index()
+            st.line_chart(chart_data.set_index("Date"))
     else:
         st.info("No historical data available yet.")
