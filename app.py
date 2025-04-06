@@ -7,6 +7,7 @@ import pandas as pd
 from datetime import datetime
 from dotenv import load_dotenv
 import ast
+import re
 
 # Load environment variables from .env file
 load_dotenv()
@@ -57,6 +58,13 @@ else:
             text += page.get_text()
         return text
 
+    # Parse quarter info
+    def extract_quarter_info(text):
+        match = re.search(r"Q(\d) FY'? ?(\d{2,4})", text, re.IGNORECASE)
+        if match:
+            return f"Q{match.group(1)} FY{match.group(2)}"
+        return "Unknown"
+
     # Generate auto-ratings using GPT
     def generate_auto_rating(prompt_text):
         if openai is None:
@@ -88,11 +96,12 @@ else:
     if os.path.exists(history_file):
         history_df = pd.read_csv(history_file)
     else:
-        history_df = pd.DataFrame(columns=["Date", "Company", "Transcript"] + categories + ["Average"])
+        history_df = pd.DataFrame(columns=["Date", "Company", "Quarter"] + categories + ["Average"])
 
     # Display form if file is uploaded
     if uploaded_file:
         extracted_text = extract_text_from_pdf(uploaded_file)
+        quarter = extract_quarter_info(extracted_text)
         st.subheader("Transcript Preview")
         st.text_area("Extracted Transcript Text (partial)", extracted_text[:3000], height=300)
 
@@ -138,7 +147,7 @@ else:
             new_row = {
                 "Date": datetime.now().strftime("%Y-%m-%d"),
                 "Company": company_name,
-                "Transcript": uploaded_file.name
+                "Quarter": quarter
             }
             new_row.update(rating_scores)
             new_row["Average"] = avg_score
@@ -165,18 +174,18 @@ else:
 
         with tab2:
             for cat in categories:
-                trend_data = history_df[["Date", cat]].dropna()
+                trend_data = history_df[["Quarter", cat]].dropna()
                 if not trend_data.empty:
-                    st.line_chart(trend_data.set_index("Date"), height=250, use_container_width=True)
+                    st.line_chart(trend_data.set_index("Quarter"), height=250, use_container_width=True)
 
         with tab3:
-            chart_data = history_df.groupby("Date")["Average"].mean().reset_index()
-            st.line_chart(chart_data.set_index("Date"))
+            chart_data = history_df.groupby("Quarter")["Average"].mean().reset_index()
+            st.line_chart(chart_data.set_index("Quarter"))
 
         with tab4:
             st.warning("⚠️ This will delete all historical records!")
             if st.button("Clear All Ratings"):
-                history_df = pd.DataFrame(columns=["Date", "Company", "Transcript"] + categories + ["Average"])
+                history_df = pd.DataFrame(columns=["Date", "Company", "Quarter"] + categories + ["Average"])
                 history_df.to_csv(history_file, index=False)
                 st.success("All data cleared successfully.")
     else:
