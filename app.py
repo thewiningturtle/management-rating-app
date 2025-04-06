@@ -26,6 +26,9 @@ except ModuleNotFoundError as e:
 if st is None:
     print("[ERROR] Streamlit is not available. Please install with: pip install streamlit pymupdf openai pandas python-dotenv")
 else:
+    # Page config
+    st.set_page_config(layout="wide")
+
     # Title
     st.title("📊 Management Rating System - Ganesh Housing Prototype")
 
@@ -42,10 +45,6 @@ else:
         "Governance & Integrity",
         "Outlook & Realism"
     ]
-
-    # Initialize rating dictionary
-    rating_scores = {category: 0 for category in categories}
-    extracted_text = ""
 
     # Extract text from PDF
     def extract_text_from_pdf(pdf_file):
@@ -102,8 +101,8 @@ else:
 
         if mode == "Manual Rating":
             st.subheader("Rate the Management (0 to 5)")
-            for category in categories:
-                rating_scores[category] = st.slider(category, 0, 5, 3)
+            st.session_state.rating_scores = {category: st.slider(category, 0, 5, 3) for category in categories}
+
         else:
             st.subheader("Generating Auto-Rating...")
             if st.button("Run AI Evaluation"):
@@ -112,12 +111,13 @@ else:
                     if "error" in result:
                         st.error(f"GPT Error: {result['error']}")
                     else:
-                        rating_scores.update(result)
+                        st.session_state.rating_scores = result
                         st.success("✅ AI-based Ratings Generated!")
                         for cat in categories:
-                            st.write(f"**{cat}:** {rating_scores[cat]}")
+                            st.write(f"**{cat}:** {result[cat]}")
 
-        if st.button("Generate Summary") and all(category in rating_scores for category in categories):
+        if st.button("Generate Summary") and "rating_scores" in st.session_state:
+            rating_scores = st.session_state.rating_scores
             avg_score = sum(rating_scores.values()) / len(categories)
 
             st.markdown("---")
@@ -158,7 +158,8 @@ else:
     st.markdown("---")
     st.subheader("📈 Historical Ratings")
     if not history_df.empty:
-        st.dataframe(history_df.tail(10))
+        with st.expander("🔍 View Full Historical Table", expanded=True):
+            st.dataframe(history_df, use_container_width=True)
 
         chart_data = history_df.groupby("Date")["Average"].mean().reset_index()
         st.line_chart(chart_data.set_index("Date"))
