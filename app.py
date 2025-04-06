@@ -158,7 +158,7 @@ else:
     st.markdown("---")
     st.subheader("📈 Historical Ratings")
     if not history_df.empty:
-        tab1, tab2, tab3 = st.tabs(["📋 Table View", "📊 Trend Chart", "📈 Average Trend"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📋 Table View", "📊 Trend Chart", "📈 Average Trend", "🗑️ Reset Table"])
 
         with tab1:
             st.dataframe(history_df, use_container_width=True)
@@ -172,5 +172,12 @@ else:
         with tab3:
             chart_data = history_df.groupby("Date")["Average"].mean().reset_index()
             st.line_chart(chart_data.set_index("Date"))
+
+        with tab4:
+            st.warning("⚠️ This will delete all historical records!")
+            if st.button("Clear All Ratings"):
+                history_df = pd.DataFrame(columns=["Date", "Company", "Transcript"] + categories + ["Average"])
+                history_df.to_csv(history_file, index=False)
+                st.success("All data cleared successfully.")
     else:
         st.info("No historical data available yet.")
