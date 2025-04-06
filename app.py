@@ -77,7 +77,13 @@ Your job is to analyze the following transcript and rate the company’s managem
 
 If anything seems evasive, vague, inconsistent, or risky – give low scores and note it.
 
-Output strictly in a Python dictionary with category names as keys and scores (0–5) as values.
+Output strictly in a Python dictionary like:
+{
+    "Strategy & Vision": 3,
+    "Execution & Delivery": 2,
+    ...
+}
+Do not add explanations, comments, or text outside the dictionary.
 """
 
         chunks = [prompt_text[i:i+4000] for i in range(0, len(prompt_text), 4000)]
@@ -92,8 +98,12 @@ Output strictly in a Python dictionary with category names as keys and scores (0
                         {"role": "user", "content": chunk}
                     ]
                 )
-                response_text = response.choices[0].message.content
-                rating_dict = ast.literal_eval(response_text.split("\n\n")[0])
+                response_text = response.choices[0].message.content.strip()
+                try:
+                    rating_dict = ast.literal_eval(response_text)
+                except Exception as parse_error:
+                    return {"error": f"Parsing failed: {str(parse_error)}", "raw": response_text}
+
                 if isinstance(rating_dict, dict):
                     for k, v in rating_dict.items():
                         combined_scores[k].append(v)
@@ -130,6 +140,8 @@ Output strictly in a Python dictionary with category names as keys and scores (0
                         result = generate_auto_rating(extracted_text)
                         if "error" in result:
                             st.error(f"GPT Error: {result['error']}")
+                            if "raw" in result:
+                                st.code(result["raw"], language="python")
                         else:
                             st.success("✅ AI-based Ratings Generated!")
                             for cat in categories:
