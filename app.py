@@ -1,6 +1,6 @@
 # NOTE: This script is intended to be run in a local environment with required packages installed.
-# Required packages: streamlit, PyMuPDF, openai, pandas, python-dotenv
-# Install using: pip install streamlit pymupdf openai pandas python-dotenv
+# Required packages: streamlit, PyMuPDF, openai, pandas, python-dotenv, fpdf
+# Install using: pip install streamlit pymupdf openai pandas python-dotenv fpdf
 
 import os
 import pandas as pd
@@ -8,12 +8,10 @@ from datetime import datetime
 from dotenv import load_dotenv
 import ast
 import re
-from collections import defaultdict
+from fpdf import FPDF
 
-# Load environment variables from .env file
 load_dotenv()
 
-# Try importing optional packages, but don't exit if missing
 try:
     import streamlit as st
     import fitz  # PyMuPDF
@@ -39,9 +37,6 @@ else:
     ]
 
     def extract_text_from_pdf(pdf_file):
-        if fitz is None:
-            st.error("PyMuPDF is not available. Please install it locally with: pip install pymupdf")
-            return ""
         doc = fitz.open(stream=pdf_file.read(), filetype="pdf")
         return "".join([page.get_text() for page in doc])
 
@@ -51,162 +46,81 @@ else:
 
     def extract_company_name(text):
         match = re.search(r"(?i)(?:welcome to|from)\s+([A-Z][\w\s&.-]+?)(?:\s+(?:Limited|Ltd\.|Inc\.|Group|Corporation|Corp\.|Bank))?\b", text)
-        if match:
-            return match.group(1).strip()
-        return "Unknown Company"
+        return match.group(1).strip() if match else "Unknown Company"
 
     def generate_auto_rating(prompt_text):
-        if openai is None:
-            st.error("OpenAI module not found. Please install it locally with: pip install openai")
-            return {}
-
         openai.api_key = st.secrets["OPENAI_API_KEY"]
 
         system_prompt = """
-You are a forensic financial analyst with expertise in evaluating company management through earnings call transcripts.
+        Evaluate the management strictly and unbiasedly. Rate (0-5) on:
+        1. Strategy & Vision
+        2. Execution & Delivery
+        3. Handling Tough Phases
+        4. Communication Clarity
+        5. Capital Allocation
+        6. Governance & Integrity (Consider red flags like management stake selling, frequent leadership changes, fraud)
+        7. Outlook & Realism
 
-Your job is to analyze the following transcript and rate the company’s management (scale of 0 to 5) on these 7 categories. Be strict, unbiased, and highlight any red flags:
+        Provide detailed justification for each rating, highlight red flags if present.
 
-1. Strategy & Vision – Is their plan well-articulated and future-aligned?
-2. Execution & Delivery – Do they demonstrate actual results?
-3. Handling Tough Phases – Are they transparent and accountable during challenges?
-4. Communication Clarity – Is their language clear, direct, and data-supported?
-5. Capital Allocation – Is there logic behind their capital usage (buybacks, dividends, lending)?
-6. Governance & Integrity – Do they demonstrate honesty, control, and compliance?
-7. Outlook & Realism – Are projections realistic or overly optimistic?
+        Output strictly as a dictionary:
+        {'ratings': {'category': rating, ...}, 'justification': {'category': 'justification text', ...}, 'red_flags': ['red flag 1', ...]}
+        """
 
-If anything seems evasive, vague, inconsistent, or risky – give low scores and note it.
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt_text}
+            ]
+        )
+        return ast.literal_eval(response.choices[0].message.content)
 
-Output strictly in a Python dictionary like:
-{
-    "Strategy & Vision": 3,
-    "Execution & Delivery": 2,
-    ...
-}
-Do not add explanations, comments, or text outside the dictionary.
-"""
+    def create_pdf_report(company, quarter, ratings, justifications, red_flags):
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
+        pdf.cell(200, 10, f"Management Evaluation Report: {company} - {quarter}", ln=True, align='C')
+        pdf.ln(10)
 
-        chunks = [prompt_text[i:i+4000] for i in range(0, len(prompt_text), 4000)]
-        combined_scores = defaultdict(list)
+        pdf.set_font("Arial", size=10)
+        for cat in ratings:
+            pdf.cell(0, 10, f"{cat}: {ratings[cat]}/5", ln=True)
+            pdf.multi_cell(0, 10, f"Justification: {justifications[cat]}")
+            pdf.ln(2)
 
-        for chunk in chunks:
-            try:
-                response = openai.chat.completions.create(
-                    model="gpt-4",
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": chunk}
-                    ]
-                )
-                response_text = response.choices[0].message.content.strip()
-                try:
-                    rating_dict = ast.literal_eval(response_text)
-                except Exception as parse_error:
-                    return {"error": f"Parsing failed: {str(parse_error)}", "raw": response_text}
+        if red_flags:
+            pdf.set_text_color(255, 0, 0)
+            pdf.cell(0, 10, "Red Flags Identified:", ln=True)
+            pdf.set_text_color(0, 0, 0)
+            for flag in red_flags:
+                pdf.cell(0, 10, f"- {flag}", ln=True)
 
-                if isinstance(rating_dict, dict):
-                    for k, v in rating_dict.items():
-                        combined_scores[k].append(v)
-            except Exception as e:
-                return {"error": str(e)}
-
-        return {k: min(v) for k, v in combined_scores.items() if k in categories}
+        return pdf.output(dest='S').encode('latin1')
 
     history_file = "management_ratings.csv"
     history_df = pd.read_csv(history_file) if os.path.exists(history_file) else pd.DataFrame(columns=["Date", "Company", "Quarter"] + categories + ["Average"])
 
     if uploaded_files:
-        if "ratings" not in st.session_state:
-            st.session_state["ratings"] = {}
-
         for uploaded_file in uploaded_files:
-            extracted_text = extract_text_from_pdf(uploaded_file)
-            quarter = extract_quarter_info(extracted_text)
-            company_name = extract_company_name(extracted_text)
+            text = extract_text_from_pdf(uploaded_file)
+            quarter = extract_quarter_info(text)
+            company_name = extract_company_name(text)
+
             st.subheader(f"Transcript Preview: {uploaded_file.name}")
-            st.text_area("Extracted Transcript Text (partial)", extracted_text[:3000], height=300)
+            st.text_area("Extracted Transcript Text (partial)", text[:3000], height=300)
 
-            mode = st.radio(f"Choose Rating Mode for {uploaded_file.name}", ["Auto Rating (AI)", "Manual Rating"], key=uploaded_file.name)
+            if st.button(f"Run AI Evaluation for {uploaded_file.name}"):
+                result = generate_auto_rating(text)
+                ratings, justifications, red_flags = result['ratings'], result['justification'], result['red_flags']
 
-            if mode == "Manual Rating":
-                st.subheader("Rate the Management (0 to 5)")
-                rating_scores = {category: st.slider(category, 0, 5, 3, key=f"{uploaded_file.name}_{category}") for category in categories}
-                st.session_state.ratings[uploaded_file.name] = rating_scores
-
-            else:
-                st.subheader("Generating Auto-Rating...")
-                if st.button(f"Run AI Evaluation for {uploaded_file.name}"):
-                    with st.spinner("Analyzing transcript with GPT..."):
-                        result = generate_auto_rating(extracted_text)
-                        if "error" in result:
-                            st.error(f"GPT Error: {result['error']}")
-                            if "raw" in result:
-                                st.code(result["raw"], language="python")
-                        else:
-                            st.success("✅ AI-based Ratings Generated!")
-                            for cat in categories:
-                                st.write(f"**{cat}:** {result[cat]}")
-                            st.session_state.ratings[uploaded_file.name] = result
-
-            if st.button(f"Generate Summary for {uploaded_file.name}"):
-                if uploaded_file.name in st.session_state.ratings:
-                    rating_scores = st.session_state.ratings[uploaded_file.name]
-                    avg_score = sum(rating_scores.values()) / len(categories)
-
-                    st.markdown("---")
-                    st.header("📋 Management Evaluation Summary")
-                    for cat in categories:
-                        st.write(f"**{cat}:** {rating_scores[cat]}/5")
-                    st.markdown(f"**Overall Management Rating:** {avg_score:.2f} / 5")
-
-                    if avg_score >= 4.5:
-                        st.success("Excellent Management - Highly Consistent & Trustworthy")
-                    elif avg_score >= 3.5:
-                        st.info("Good Management - Performing with Stability")
-                    else:
-                        st.warning("Needs Further Review - Track Closely")
-
-                    new_row = {
-                        "Date": datetime.now().strftime("%Y-%m-%d"),
-                        "Company": company_name,
-                        "Quarter": quarter
-                    }
-                    new_row.update(rating_scores)
-                    new_row["Average"] = avg_score
-                    history_df = pd.concat([history_df, pd.DataFrame([new_row])], ignore_index=True)
-                    history_df.to_csv(history_file, index=False)
-
-                    csv_output = pd.DataFrame([new_row]).to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📤 Download This Rating as CSV",
-                        data=csv_output,
-                        file_name=f"{company_name}_management_rating.csv",
-                        mime="text/csv",
-                    )
-                else:
-                    st.warning("⚠️ Please run AI Evaluation or Manual Rating before generating summary.")
-
-    st.markdown("---")
-    st.subheader("📈 Historical Ratings")
-    if not history_df.empty:
-        tab1, tab2, tab3, tab4 = st.tabs(["📋 Table View", "📊 Trend Chart", "📈 Average Trend", "🗑️ Reset Table"])
-        with tab1:
-            st.dataframe(history_df, use_container_width=True)
-        with tab2:
-            for cat in categories:
-                if "Quarter" in history_df.columns:
-                    trend_data = history_df[["Quarter", cat]].dropna()
-                    if not trend_data.empty:
-                        st.line_chart(trend_data.set_index("Quarter"), height=250, use_container_width=True)
-        with tab3:
-            if "Quarter" in history_df.columns:
-                chart_data = history_df.groupby("Quarter")["Average"].mean().reset_index()
-                st.line_chart(chart_data.set_index("Quarter"))
-        with tab4:
-            st.warning("⚠️ This will delete all historical records!")
-            if st.button("Clear All Ratings"):
-                history_df = pd.DataFrame(columns=["Date", "Company", "Quarter"] + categories + ["Average"])
+                avg_score = sum(ratings.values()) / len(categories)
+                new_row = {"Date": datetime.now().strftime("%Y-%m-%d"), "Company": company_name, "Quarter": quarter, **ratings, "Average": avg_score}
+                history_df = pd.concat([history_df, pd.DataFrame([new_row])], ignore_index=True)
                 history_df.to_csv(history_file, index=False)
-                st.success("All data cleared successfully.")
-    else:
-        st.info("No historical data available yet.")
+
+                pdf_data = create_pdf_report(company_name, quarter, ratings, justifications, red_flags)
+                st.download_button("📥 Download PDF Report", data=pdf_data, file_name=f"{company_name}_{quarter}_Management_Report.pdf", mime="application/pdf")
+
+    st.subheader("📈 Historical Ratings")
+    st.dataframe(history_df, use_container_width=True)
