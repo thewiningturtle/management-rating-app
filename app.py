@@ -45,7 +45,7 @@ else:
         return f"Q{match.group(1)} FY{match.group(2)}" if match else "Unknown"
 
     def extract_company_name(text):
-        match = re.search(r"welcome to ([A-Z][\w&.,'\-() ]{2,100}?) (?:Limited|Ltd|Incorporated|Inc|Group|Bank|Corp)?\b", text, re.IGNORECASE)
+        match = re.search(r"(?:welcome|call of) (?:to )?([A-Z][\w&.,'\-() ]{2,100}?)(?: Limited| Ltd| Incorporated| Inc| Group| Bank| Corp)?[.,\n]", text, re.IGNORECASE)
         return match.group(1).strip() if match else "Unknown Company"
 
     def generate_auto_rating(current_text, previous_text):
@@ -138,12 +138,25 @@ else:
             justifications = result.get('justification', {})
             red_flags = result.get('red_flags', [])
 
-            # ✅ Ensure all 7 ratings present
-            if not all(cat in ratings for cat in categories):
-                st.error("Rating generation incomplete. Please try again or review AI response structure.")
+            if not all(cat in ratings and isinstance(ratings[cat], (int, float)) for cat in categories):
+                st.error("⚠️ Rating generation incomplete. Some categories are missing. Please retry or verify the AI response.")
             else:
-                avg_score = sum(ratings.values()) / len(categories)
-                new_row = {"Date": datetime.now().strftime("%Y-%m-%d"), "Company": company_name, "Quarter": quarter, **ratings, "Average": avg_score}
+                avg_score = round(sum(ratings.values()) / len(categories), 4)
+                if company_name == "Unknown Company":
+                    company_name = "Unnamed"
+
+                new_row = {
+                    "Date": datetime.now().strftime("%Y-%m-%d"),
+                    "Company": company_name,
+                    "Quarter": quarter,
+                    **ratings,
+                    "Average": avg_score
+                }
+
+                history_df = history_df[
+                    ~((history_df["Company"] == company_name) & (history_df["Quarter"] == quarter))
+                ]
+
                 history_df = pd.concat([history_df, pd.DataFrame([new_row])], ignore_index=True)
                 history_df.to_csv(history_file, index=False)
 
@@ -155,10 +168,23 @@ else:
 
     st.subheader("📈 Historical Ratings")
     if not history_df.empty:
-        with st.expander("Show/Hide Full Rating Table"):
+        tab1, tab2, tab3, tab4 = st.tabs(["📋 Table View", "📊 Trend Chart", "📈 Average Trend", "🧹 Reset Table"])
+
+        with tab1:
             st.dataframe(history_df, use_container_width=True)
-        trend_data = history_df.groupby(["Quarter"])["Average"].mean().reset_index().sort_values(by="Quarter")
-        st.line_chart(trend_data.set_index("Quarter"))
-        st.markdown("_Tip: Hover over the trend chart to view performance changes over time._")
+
+        with tab2:
+            trend_data = history_df.groupby("Quarter")["Average"].mean().reset_index().sort_values(by="Quarter")
+            st.line_chart(trend_data.set_index("Quarter"))
+
+        with tab3:
+            st.bar_chart(history_df.groupby("Company")["Average"].mean().sort_values(ascending=False))
+
+        with tab4:
+            if st.button("🗑️ Confirm Clear All History"):
+                history_df = pd.DataFrame(columns=["Date", "Company", "Quarter"] + categories + ["Average"])
+                history_df.to_csv(history_file, index=False)
+                st.success("History cleared.")
+
     else:
         st.info("No historical data available yet.")
