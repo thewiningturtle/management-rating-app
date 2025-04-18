@@ -28,7 +28,7 @@ else:
     st.set_page_config(layout="wide")
     st.title("📊 Management Rating System")
 
-    uploaded_files = st.file_uploader("Upload One or More Earnings Call Transcripts (PDFs)", type=["pdf"], accept_multiple_files=True)
+    uploaded_files = st.file_uploader("Upload *Two* Earnings Call Transcripts – Current & Previous Quarter (PDFs)", type=["pdf"], accept_multiple_files=True)
 
     categories = [
         "Strategy & Vision", "Execution & Delivery", "Handling Tough Phases",
@@ -45,48 +45,49 @@ else:
         return f"Q{match.group(1)} FY{match.group(2)}" if match else "Unknown"
 
     def extract_company_name(text):
-        match = re.search(r"(?i)(?:welcome to|from)\s+([A-Z][\w\s&.-]+?)(?:\s+(?:Limited|Ltd\.|Inc\.|Group|Corporation|Corp\.|Bank))?\b", text)
+        match = re.search(r"welcome to ([A-Z][\w&.,'\-() ]{2,100}?) (?:Limited|Ltd|Incorporated|Inc|Group|Bank|Corp)?\b", text, re.IGNORECASE)
         return match.group(1).strip() if match else "Unknown Company"
 
-    def generate_auto_rating(prompt_text):
+    def generate_auto_rating(current_text, previous_text):
         openai.api_key = st.secrets["OPENAI_API_KEY"]
 
         system_prompt = """
-        Evaluate management strictly and unbiasedly based on the following categories (rate 0-5):
+        You are a forensic analyst evaluating company management based on their earnings call transcripts.
+        Use the CURRENT quarter's transcript in comparison with the PREVIOUS quarter to:
 
-        1. Strategy & Vision:
-           - Is strategy clear and realistic?
-           - Check for unnecessary diversification and unclear fund deployments.
+        - Score the CURRENT quarter on:
+          1. Strategy & Vision
+          2. Execution & Delivery
+          3. Handling Tough Phases
+          4. Communication Clarity
+          5. Capital Allocation
+          6. Governance & Integrity
+          7. Outlook & Realism
 
-        2. Execution & Delivery:
-           - Consistency in delivery and avoiding exaggerations.
+        - Rate each category from 0 to 5.
 
-        3. Handling Tough Phases:
-           - Effectiveness during challenging times and management stability.
+        - Detect Red Flags such as:
+          • Leadership turnover (CEO/CFO resignations)
+          • Promoter stake sale
+          • Unrealistic forward guidance
+          • Overuse of buzzwords without evidence
+          • Repeated execution failures
 
-        4. Communication Clarity:
-           - Transparency and clarity, avoiding excessive buzzwords.
+        - Use clear justifications comparing BOTH transcripts.
 
-        5. Capital Allocation:
-           - Efficiency, transparency, avoiding related-party transactions.
-
-        6. Governance & Integrity:
-           - Robust governance, promoter pledging, personal stake sales.
-
-        7. Outlook & Realism:
-           - Realistic and justified future plans, avoiding unrealistic promises.
-
-        Provide ratings, detailed justification, and clear red flags.
-
-        Output strictly as:
-        {'ratings': {'category': rating}, 'justification': {'category': 'text'}, 'red_flags': ['flag1', 'flag2']}
+        Output format:
+        {
+          'ratings': {'category': score},
+          'justification': {'category': 'text'},
+          'red_flags': ['flag1', 'flag2']
+        }
         """
 
         response = openai.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt_text}
+                {"role": "user", "content": f"CURRENT:\n{current_text[:6000]}\n\nPREVIOUS:\n{previous_text[:6000]}"}
             ]
         )
 
@@ -102,7 +103,7 @@ else:
         pdf.set_font("Arial", size=10)
         for cat in ratings:
             pdf.cell(0, 10, f"{cat}: {ratings[cat]}/5", ln=True)
-            pdf.multi_cell(0, 10, f"Justification: {justifications[cat]}")
+            pdf.multi_cell(0, 10, f"Justification: {justifications.get(cat, 'N/A')}")
             pdf.ln(2)
 
         if red_flags:
@@ -117,19 +118,30 @@ else:
     history_file = "management_ratings.csv"
     history_df = pd.read_csv(history_file) if os.path.exists(history_file) else pd.DataFrame(columns=["Date", "Company", "Quarter"] + categories + ["Average"])
 
-    if uploaded_files:
-        for uploaded_file in uploaded_files:
-            text = extract_text_from_pdf(uploaded_file)
-            quarter = extract_quarter_info(text)
-            company_name = extract_company_name(text)
+    if uploaded_files and len(uploaded_files) == 2:
+        st.success("Two transcripts uploaded. Current + Previous comparison enabled.")
+        current_file, previous_file = uploaded_files
 
-            st.subheader(f"Transcript Preview: {uploaded_file.name}")
-            st.text_area("Extracted Transcript Text (partial)", text[:3000], height=300)
+        current_text = extract_text_from_pdf(current_file)
+        previous_text = extract_text_from_pdf(previous_file)
 
-            if st.button(f"Run AI Evaluation for {uploaded_file.name}"):
-                result = generate_auto_rating(text)
-                ratings, justifications, red_flags = result['ratings'], result['justification'], result['red_flags']
+        quarter = extract_quarter_info(current_text)
+        company_name = extract_company_name(current_text)
 
+        st.subheader("Transcript Preview")
+        st.text_area("Current Quarter Text (partial)", current_text[:2500], height=250)
+        st.text_area("Previous Quarter Text (partial)", previous_text[:2500], height=200)
+
+        if st.button("Run AI Comparison and Rating"):
+            result = generate_auto_rating(current_text, previous_text)
+            ratings = result.get('ratings', {})
+            justifications = result.get('justification', {})
+            red_flags = result.get('red_flags', [])
+
+            # ✅ Ensure all 7 ratings present
+            if not all(cat in ratings for cat in categories):
+                st.error("Rating generation incomplete. Please try again or review AI response structure.")
+            else:
                 avg_score = sum(ratings.values()) / len(categories)
                 new_row = {"Date": datetime.now().strftime("%Y-%m-%d"), "Company": company_name, "Quarter": quarter, **ratings, "Average": avg_score}
                 history_df = pd.concat([history_df, pd.DataFrame([new_row])], ignore_index=True)
@@ -138,5 +150,15 @@ else:
                 pdf_data = create_pdf_report(company_name, quarter, ratings, justifications, red_flags)
                 st.download_button("📥 Download PDF Report", data=pdf_data, file_name=f"{company_name}_{quarter}_Management_Report.pdf", mime="application/pdf")
 
+    elif uploaded_files:
+        st.warning("Please upload exactly two PDF files – current and previous quarter.")
+
     st.subheader("📈 Historical Ratings")
-    st.dataframe(history_df, use_container_width=True)
+    if not history_df.empty:
+        with st.expander("Show/Hide Full Rating Table"):
+            st.dataframe(history_df, use_container_width=True)
+        trend_data = history_df.groupby(["Quarter"])["Average"].mean().reset_index().sort_values(by="Quarter")
+        st.line_chart(trend_data.set_index("Quarter"))
+        st.markdown("_Tip: Hover over the trend chart to view performance changes over time._")
+    else:
+        st.info("No historical data available yet.")
