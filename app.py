@@ -36,7 +36,7 @@ else:
     news_summary = st.text_area("(Optional) Add News Summary", placeholder="Paste key headlines or press blurbs...")
 
     categories = [
-        "Strategy & Vision", "Execution & Delivery", "Handling Tough Phases",
+        "Strategy & Vision", "Execution & Delivery",
         "Communication Clarity", "Capital Allocation",
         "Governance & Integrity", "Outlook & Realism"
     ]
@@ -79,10 +79,10 @@ else:
         return red_flags
 
     def normalize_ratings(ratings):
-        normalized = {cat: 0 for cat in categories}  # Default to 0
+        normalized = {cat: 0 for cat in categories}
         for key, value in ratings.items():
             core_key = normalization_map.get(key, key)
-            if core_key in normalized:
+            if core_key in normalized and isinstance(value, int) and 0 <= value <= 5:
                 normalized[core_key] = value
         return normalized
 
@@ -92,25 +92,32 @@ else:
         system_prompt = f"""
         You are a forensic analyst evaluating company management based on earnings transcripts, insider trading, and leadership disclosures.
 
-        Step-by-step:
-        1. Score the CURRENT quarter across 7 categories (0 to 5). Do NOT leave any category undefined. If score is 0, provide a justification.
-        2. Compare CURRENT and PREVIOUS transcript: flag any missed delivery, fake optimism, or vague commitments.
-        3. Highlight red flags:
-           - Insider selling
-           - Frequent leadership changes
-           - Talk vs. Execution mismatch
-           - Buzzword overdose without substance
-           - Any media over-exposure
-        4. Also use:
-           • News: {news_snippets}
-           • Insider Flags: {insider_flags}
-           • Leadership: {leadership_note}
+        Score the CURRENT quarter across the following 6 categories (0 to 5). Do NOT leave any category undefined. If score is 0, provide a strong justification:
+          - Strategy & Vision
+          - Execution & Delivery
+          - Communication Clarity
+          - Capital Allocation
+          - Governance & Integrity
+          - Outlook & Realism
 
-        Output format:
+        Also compare CURRENT vs PREVIOUS quarter for delivery gaps.
+        Flag red flags such as:
+          • Insider selling
+          • Leadership exits
+          • Big talk vs weak action
+          • Buzzword abuse
+          • Overhype in media
+
+        Context:
+          News: {news_snippets}
+          Insider: {insider_flags}
+          Leadership: {leadership_note}
+
+        Output:
         {{
           "ratings": {{"category": score}},
-          "justification": {{"category": "text"}},
-          "red_flags": ["flag1", "flag2"]
+          "justification": {{"category": "reason"}},
+          "red_flags": ["..."]
         }}
         """
 
@@ -124,7 +131,7 @@ else:
 
         try:
             return ast.literal_eval(response.choices[0].message.content)
-        except Exception as e:
+        except Exception:
             st.error("⚠️ Failed to parse AI output. Please check model formatting.")
             return {}
 
