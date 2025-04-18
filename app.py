@@ -33,6 +33,7 @@ else:
     insider_file = st.file_uploader("(Optional) Upload Insider Trading CSV", type="csv")
     leadership_note = st.text_area("Leadership Change Summary (Optional)", placeholder="E.g. CFO resigned in Jan 2024...")
     annual_report = st.file_uploader("(Optional) Upload Annual Report PDF", type=["pdf"])
+    news_summary = st.text_area("(Optional) Add News Summary", placeholder="Paste key headlines or press blurbs...")
 
     categories = [
         "Strategy & Vision", "Execution & Delivery", "Handling Tough Phases",
@@ -90,9 +91,9 @@ else:
 
         Output format:
         {{
-          'ratings': {{'category': score}},
-          'justification': {{'category': 'text'}},
-          'red_flags': ['flag1', 'flag2']
+          "ratings": {{"category": score}},
+          "justification": {{"category": "text"}},
+          "red_flags": ["flag1", "flag2"]
         }}
         """
 
@@ -144,12 +145,12 @@ else:
         company_name = extract_company_name(current_text, fallback=current_file.name)
 
         st.subheader("Transcript Preview")
-        with st.expander("📄 View Extracted Text"):
+        with st.expander("📄 View Extracted Text", expanded=True):
             st.text_area("Current Quarter Text", current_text[:2500], height=200)
             st.text_area("Previous Quarter Text", previous_text[:2500], height=200)
 
         if st.button("Run AI Comparison and Rating"):
-            news_snippets = fetch_recent_news(company_name)
+            news_snippets = fetch_recent_news(company_name) + ([news_summary] if news_summary else [])
             insider_flags = []
             if insider_file:
                 insider_df = pd.read_csv(insider_file)
@@ -162,6 +163,7 @@ else:
 
             if not all(cat in ratings and isinstance(ratings[cat], (int, float)) for cat in categories):
                 st.error("⚠️ Rating generation incomplete. Some categories are missing. Please retry or verify the AI response.")
+                st.json(ratings)
             else:
                 avg_score = round(sum(ratings.values()) / len(categories), 4)
 
@@ -190,7 +192,8 @@ else:
         tab1, tab2, tab3, tab4 = st.tabs(["📋 Table View", "📊 Trend Chart", "📈 Average Trend", "🧹 Reset Table"])
 
         with tab1:
-            st.dataframe(history_df.sort_values(by="Date", ascending=False), use_container_width=True)
+            st.markdown("### 📋 Ratings Table")
+            st.dataframe(history_df.sort_values(by="Date", ascending=False), use_container_width=True, height=500)
 
         with tab2:
             trend_data = history_df.groupby("Quarter")["Average"].mean().reset_index().sort_values(by="Quarter")
