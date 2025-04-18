@@ -56,36 +56,30 @@ else:
 
         1. Strategy & Vision:
            - Is strategy clear and realistic?
-           - Check if the company diversifies unnecessarily into unrelated sectors or raises funds frequently without clear deployment plans.
+           - Check for unnecessary diversification and unclear fund deployments.
 
         2. Execution & Delivery:
-           - Does management deliver consistently?
-           - Check for overpromising and exaggerating minor developments.
+           - Consistency in delivery and avoiding exaggerations.
 
         3. Handling Tough Phases:
-           - How effectively does management navigate through challenging times?
-           - Check if there are frequent exits of key personnel.
+           - Effectiveness during challenging times and management stability.
 
         4. Communication Clarity:
-           - Is management clear and transparent in communications?
-           - Check for constant media presence without substantial progress and excessive buzzword usage.
+           - Transparency and clarity, avoiding excessive buzzwords.
 
         5. Capital Allocation:
-           - Evaluate efficiency and transparency of capital allocation.
-           - Check specifically for excessive related-party transactions.
+           - Efficiency, transparency, avoiding related-party transactions.
 
         6. Governance & Integrity:
-           - Is there robust corporate governance?
-           - Highlight issues like high promoter pledging, extravagant promoter lifestyle, or management selling personal stakes.
+           - Robust governance, promoter pledging, personal stake sales.
 
         7. Outlook & Realism:
-           - Are future plans realistic and justified?
-           - Check if management consistently talks big or promises unrealistically high performance.
+           - Realistic and justified future plans, avoiding unrealistic promises.
 
-        Provide a detailed justification for each rating. Clearly highlight any red flags identified based on the above checkpoints.
+        Provide ratings, detailed justification, and clear red flags.
 
-        Output strictly as a dictionary:
-        {'ratings': {'category': rating, ...}, 'justification': {'category': 'justification text', ...}, 'red_flags': ['red flag 1', 'red flag 2', ...]}
+        Output strictly as:
+        {'ratings': {'category': rating}, 'justification': {'category': 'text'}, 'red_flags': ['flag1', 'flag2']}
         """
 
         response = openai.chat.completions.create(
@@ -95,6 +89,7 @@ else:
                 {"role": "user", "content": prompt_text}
             ]
         )
+
         return ast.literal_eval(response.choices[0].message.content)
 
     def create_pdf_report(company, quarter, ratings, justifications, red_flags):
