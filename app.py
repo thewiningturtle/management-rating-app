@@ -93,13 +93,15 @@ else:
         system_prompt = f"""
         You are a forensic analyst evaluating company management based on earnings transcripts, insider trading, and leadership disclosures.
 
-        Score the CURRENT quarter across the following 6 categories (0 to 5). Do NOT leave any category undefined. If score is 0, provide a strong justification:
-          - Strategy & Vision
-          - Execution & Delivery
-          - Communication Clarity
-          - Capital Allocation
-          - Governance & Integrity
-          - Outlook & Realism
+        Score the CURRENT quarter across the following 6 categories (0 to 5). Do NOT leave any category undefined. If score is 0, provide a strong justification.
+        Only assign 5/5 if performance is exceptionally strong and clearly backed with results.
+
+        - Strategy & Vision
+        - Execution & Delivery
+        - Communication Clarity
+        - Capital Allocation
+        - Governance & Integrity
+        - Outlook & Realism
 
         Compare CURRENT vs PREVIOUS quarter for delivery gaps.
         Flag red flags like:
@@ -196,8 +198,18 @@ else:
 
             # Remove invalid ratings
             for key in ratings:
-                if ratings[key] > 0 and not justifications.get(key):
-                    ratings[key] = None
+                if ratings[key] is not None:
+                    reason = justifications.get(key, "")
+                    if len(reason.strip()) < 30:
+                        ratings[key] = 0
+                        justifications[key] = "Insufficient justification provided."
+
+            if len(red_flags) >= 2:
+                avg_override = sum(v for v in ratings.values() if isinstance(v, int)) / len(categories)
+                if avg_override > 3.5:
+                    for k in ratings:
+                        if ratings[k] and ratings[k] > 4:
+                            ratings[k] = 3
 
             valid_scores = [v for v in ratings.values() if isinstance(v, int)]
             avg_score = round(sum(valid_scores) / len(valid_scores), 4) if valid_scores else 0
