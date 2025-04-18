@@ -1,5 +1,7 @@
-streamlit[default]
-pymupdf
+streamlit
+PyMuPDF
 openai
 pandas
 python-dotenv
+fpdf
+
