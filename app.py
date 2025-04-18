@@ -1,6 +1,6 @@
 # NOTE: This script is intended to be run in a local environment with required packages installed.
-# Required packages: streamlit, PyMuPDF, openai, pandas, python-dotenv, fpdf
-# Install using: pip install streamlit pymupdf openai pandas python-dotenv fpdf
+# Required packages: streamlit, PyMuPDF, openai, pandas, python-dotenv, fpdf, feedparser
+# Install using: pip install streamlit pymupdf openai pandas python-dotenv fpdf feedparser
 
 import os
 import pandas as pd
@@ -8,6 +8,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 import ast
 import re
+import feedparser
 from fpdf import FPDF
 
 load_dotenv()
@@ -28,7 +29,9 @@ else:
     st.set_page_config(layout="wide")
     st.title("📊 Management Rating System")
 
-    uploaded_files = st.file_uploader("Upload 2 to 4 Earnings Call Transcripts (PDFs)", type=["pdf"], accept_multiple_files=True)
+    uploaded_files = st.file_uploader("Upload 2 to 4 Earnings Call Transcripts – Current & Previous Quarter (PDFs)", type=["pdf"], accept_multiple_files=True)
+    insider_file = st.file_uploader("(Optional) Upload Insider Trading CSV", type="csv")
+    leadership_note = st.text_area("Leadership Change Summary (Optional)", placeholder="E.g. CFO resigned in Jan 2024...")
 
     categories = [
         "Strategy & Vision", "Execution & Delivery", "Handling Tough Phases",
@@ -50,39 +53,38 @@ else:
             match = re.search(r"([A-Z][A-Za-z0-9 &.,\-]+) (?:Limited|Ltd|Bank|Group|Corp|Industries)", text)
         return match.group(1).strip() if match else "Unknown Company"
 
-    def generate_auto_rating(current_text, previous_text):
+    def fetch_recent_news(company):
+        rss_url = f"https://news.google.com/rss/search?q={company.replace(' ', '+')}"
+        feed = feedparser.parse(rss_url)
+        return [entry.title for entry in feed.entries[:3]]
+
+    def parse_insider_flags(df):
+        red_flags = []
+        for _, row in df.iterrows():
+            if row.get("shares_sold", 0) > 100000:
+                red_flags.append(f"Large Insider Sale: {row.get('insider_name')} sold {row.get('shares_sold')} shares on {row.get('date')}")
+        return red_flags
+
+    def generate_auto_rating(current_text, previous_text, news_snippets, insider_flags, leadership_note):
         openai.api_key = st.secrets["OPENAI_API_KEY"]
 
-        system_prompt = """
-        You are a forensic analyst evaluating company management based on their earnings call transcripts.
-        Use the CURRENT quarter's transcript in comparison with the PREVIOUS quarter to:
+        system_prompt = f"""
+        You are a forensic analyst evaluating company management based on earnings transcripts, insider trading, and leadership disclosures.
 
-        - Score the CURRENT quarter on:
-          1. Strategy & Vision
-          2. Execution & Delivery
-          3. Handling Tough Phases
-          4. Communication Clarity
-          5. Capital Allocation
-          6. Governance & Integrity
-          7. Outlook & Realism
+        - Score the CURRENT quarter across 7 categories (0 to 5).
+        - Use PREVIOUS quarter for comparison.
+        - Highlight red flags like insider sales, leadership exits, unrealistic guidance.
+        - Use optional inputs:
+            • News: {news_snippets}
+            • Insider Flags: {insider_flags}
+            • Leadership: {leadership_note}
 
-        - Rate each category from 0 to 5.
-
-        - Detect Red Flags such as:
-          • Leadership turnover (CEO/CFO resignations)
-          • Promoter stake sale
-          • Unrealistic forward guidance
-          • Overuse of buzzwords without evidence
-          • Repeated execution failures
-
-        - Use clear justifications comparing BOTH transcripts.
-
-        Output format:
-        {
-          'ratings': {'category': score},
-          'justification': {'category': 'text'},
+        Return this format:
+        {{
+          'ratings': {{'category': score}},
+          'justification': {{'category': 'text'}},
           'red_flags': ['flag1', 'flag2']
-        }
+        }}
         """
 
         response = openai.chat.completions.create(
@@ -120,7 +122,7 @@ else:
     history_file = "management_ratings.csv"
     history_df = pd.read_csv(history_file) if os.path.exists(history_file) else pd.DataFrame(columns=["Date", "Company", "Quarter"] + categories + ["Average"])
 
-    if uploaded_files and len(uploaded_files) in [2, 3, 4]:
+    if uploaded_files and len(uploaded_files) >= 2:
         st.success(f"{len(uploaded_files)} transcripts uploaded. Comparison ready.")
         uploaded_files = sorted(uploaded_files, key=lambda x: x.name)
         current_file = uploaded_files[-1]
@@ -137,7 +139,13 @@ else:
         st.text_area("Previous Quarter Text (partial)", previous_text[:2500], height=200)
 
         if st.button("Run AI Comparison and Rating"):
-            result = generate_auto_rating(current_text, previous_text)
+            news_snippets = fetch_recent_news(company_name)
+            insider_flags = []
+            if insider_file:
+                insider_df = pd.read_csv(insider_file)
+                insider_flags = parse_insider_flags(insider_df)
+
+            result = generate_auto_rating(current_text, previous_text, news_snippets, insider_flags, leadership_note)
             ratings = result.get('ratings', {})
             justifications = result.get('justification', {})
             red_flags = result.get('red_flags', [])
@@ -168,7 +176,7 @@ else:
                 st.download_button("📥 Download PDF Report", data=pdf_data, file_name=f"{company_name}_{quarter}_Management_Report.pdf", mime="application/pdf")
 
     elif uploaded_files:
-        st.warning("Please upload between 2 to 4 PDF files – current and previous quarter.")
+        st.warning("Please upload at least 2 PDF files for comparison.")
 
     st.subheader("📈 Historical Ratings")
     if not history_df.empty:
