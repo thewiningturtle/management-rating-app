@@ -32,6 +32,7 @@ else:
     uploaded_files = st.file_uploader("Upload 2 to 4 Earnings Call Transcripts – Current & Previous Quarter (PDFs)", type=["pdf"], accept_multiple_files=True)
     insider_file = st.file_uploader("(Optional) Upload Insider Trading CSV", type="csv")
     leadership_note = st.text_area("Leadership Change Summary (Optional)", placeholder="E.g. CFO resigned in Jan 2024...")
+    annual_report = st.file_uploader("(Optional) Upload Annual Report PDF", type=["pdf"])
 
     categories = [
         "Strategy & Vision", "Execution & Delivery", "Handling Tough Phases",
