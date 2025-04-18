@@ -79,10 +79,10 @@ else:
         return red_flags
 
     def normalize_ratings(ratings):
-        normalized = {}
+        normalized = {cat: 0 for cat in categories}  # Default to 0
         for key, value in ratings.items():
             core_key = normalization_map.get(key, key)
-            if core_key in categories:
+            if core_key in normalized:
                 normalized[core_key] = value
         return normalized
 
@@ -137,7 +137,8 @@ else:
 
         pdf.set_font("Arial", size=10)
         for cat in ratings:
-            pdf.cell(0, 10, f"{cat}: {ratings[cat]}/5", ln=True)
+            score_display = ratings[cat] if ratings[cat] is not None else "Not Available"
+            pdf.cell(0, 10, f"{cat}: {score_display}/5", ln=True)
             pdf.multi_cell(0, 10, f"Justification: {justifications.get(cat, 'N/A')}")
             pdf.ln(2)
 
@@ -183,13 +184,7 @@ else:
             justifications = result.get('justification', {})
             red_flags = result.get('red_flags', [])
 
-            missing = [cat for cat in categories if cat not in ratings]
-
-            if missing:
-                for m in missing:
-                    ratings[m] = None
-
-            avg_score = round(sum([v for v in ratings.values() if v is not None]) / len([v for v in ratings.values() if v is not None]), 4)
+            avg_score = round(sum(ratings.values()) / len(ratings), 4)
 
             new_row = {
                 "Date": datetime.now().strftime("%Y-%m-%d"),
