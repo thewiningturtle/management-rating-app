@@ -47,11 +47,13 @@ else:
         match = re.search(r"Q(\d) FY'? ?(\d{2,4})", text, re.IGNORECASE)
         return f"Q{match.group(1)} FY{match.group(2)}" if match else "Unknown"
 
-    def extract_company_name(text):
+    def extract_company_name(text, fallback):
         match = re.search(r"(?:welcome|call of) (?:to )?([A-Z][\w&.,'\-() ]{2,100}?)(?: Limited| Ltd| Incorporated| Inc| Group| Bank| Corp)?[.,\n]", text, re.IGNORECASE)
         if not match:
             match = re.search(r"([A-Z][A-Za-z0-9 &.,\-]+) (?:Limited|Ltd|Bank|Group|Corp|Industries)", text)
-        return match.group(1).strip() if match else "Unknown Company"
+        if not match:
+            return fallback.replace(".pdf", "").replace("_", " ").title()
+        return match.group(1).strip()
 
     def fetch_recent_news(company):
         rss_url = f"https://news.google.com/rss/search?q={company.replace(' ', '+')}"
@@ -71,15 +73,21 @@ else:
         system_prompt = f"""
         You are a forensic analyst evaluating company management based on earnings transcripts, insider trading, and leadership disclosures.
 
-        - Score the CURRENT quarter across 7 categories (0 to 5).
-        - Use PREVIOUS quarter for comparison.
-        - Highlight red flags like insider sales, leadership exits, unrealistic guidance.
-        - Use optional inputs:
-            • News: {news_snippets}
-            • Insider Flags: {insider_flags}
-            • Leadership: {leadership_note}
+        Step-by-step:
+        1. Score the CURRENT quarter across 7 categories (0 to 5).
+        2. Compare CURRENT and PREVIOUS transcript: flag any missed delivery, fake optimism, or vague commitments.
+        3. Highlight red flags:
+           - Insider selling
+           - Frequent leadership changes
+           - Talk vs. Execution mismatch
+           - Buzzword overdose without substance
+           - Any media over-exposure
+        4. Also use:
+           • News: {news_snippets}
+           • Insider Flags: {insider_flags}
+           • Leadership: {leadership_note}
 
-        Return this format:
+        Output format:
         {{
           'ratings': {{'category': score}},
           'justification': {{'category': 'text'}},
@@ -132,11 +140,12 @@ else:
         previous_text = extract_text_from_pdf(previous_file)
 
         quarter = extract_quarter_info(current_text)
-        company_name = extract_company_name(current_text)
+        company_name = extract_company_name(current_text, fallback=current_file.name)
 
         st.subheader("Transcript Preview")
-        st.text_area("Current Quarter Text (partial)", current_text[:2500], height=250)
-        st.text_area("Previous Quarter Text (partial)", previous_text[:2500], height=200)
+        with st.expander("📄 View Extracted Text"):
+            st.text_area("Current Quarter Text", current_text[:2500], height=200)
+            st.text_area("Previous Quarter Text", previous_text[:2500], height=200)
 
         if st.button("Run AI Comparison and Rating"):
             news_snippets = fetch_recent_news(company_name)
@@ -154,8 +163,6 @@ else:
                 st.error("⚠️ Rating generation incomplete. Some categories are missing. Please retry or verify the AI response.")
             else:
                 avg_score = round(sum(ratings.values()) / len(categories), 4)
-                if company_name == "Unknown Company":
-                    company_name = "Unnamed"
 
                 new_row = {
                     "Date": datetime.now().strftime("%Y-%m-%d"),
@@ -168,7 +175,6 @@ else:
                 history_df = history_df[
                     ~((history_df["Company"] == company_name) & (history_df["Quarter"] == quarter))
                 ]
-
                 history_df = pd.concat([history_df, pd.DataFrame([new_row])], ignore_index=True)
                 history_df.to_csv(history_file, index=False)
 
@@ -183,7 +189,7 @@ else:
         tab1, tab2, tab3, tab4 = st.tabs(["📋 Table View", "📊 Trend Chart", "📈 Average Trend", "🧹 Reset Table"])
 
         with tab1:
-            st.dataframe(history_df, use_container_width=True)
+            st.dataframe(history_df.sort_values(by="Date", ascending=False), use_container_width=True)
 
         with tab2:
             trend_data = history_df.groupby("Quarter")["Average"].mean().reset_index().sort_values(by="Quarter")
