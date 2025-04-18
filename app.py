@@ -93,7 +93,7 @@ else:
         You are a forensic analyst evaluating company management based on earnings transcripts, insider trading, and leadership disclosures.
 
         Step-by-step:
-        1. Score the CURRENT quarter across 7 categories (0 to 5).
+        1. Score the CURRENT quarter across 7 categories (0 to 5). Do NOT leave any category undefined. If score is 0, provide a justification.
         2. Compare CURRENT and PREVIOUS transcript: flag any missed delivery, fake optimism, or vague commitments.
         3. Highlight red flags:
            - Insider selling
@@ -183,6 +183,9 @@ else:
             ratings = normalize_ratings(ratings_raw)
             justifications = result.get('justification', {})
             red_flags = result.get('red_flags', [])
+
+            if len(ratings_raw) < len(categories):
+                st.warning("⚠️ Rating generation incomplete. Some categories are missing. Please retry or verify the AI response.")
 
             avg_score = round(sum(ratings.values()) / len(ratings), 4)
 
