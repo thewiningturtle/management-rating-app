@@ -28,7 +28,7 @@ else:
     st.set_page_config(layout="wide")
     st.title("📊 Management Rating System")
 
-    uploaded_files = st.file_uploader("Upload *Two* Earnings Call Transcripts – Current & Previous Quarter (PDFs)", type=["pdf"], accept_multiple_files=True)
+    uploaded_files = st.file_uploader("Upload 2 to 4 Earnings Call Transcripts (PDFs)", type=["pdf"], accept_multiple_files=True)
 
     categories = [
         "Strategy & Vision", "Execution & Delivery", "Handling Tough Phases",
@@ -46,6 +46,8 @@ else:
 
     def extract_company_name(text):
         match = re.search(r"(?:welcome|call of) (?:to )?([A-Z][\w&.,'\-() ]{2,100}?)(?: Limited| Ltd| Incorporated| Inc| Group| Bank| Corp)?[.,\n]", text, re.IGNORECASE)
+        if not match:
+            match = re.search(r"([A-Z][A-Za-z0-9 &.,\-]+) (?:Limited|Ltd|Bank|Group|Corp|Industries)", text)
         return match.group(1).strip() if match else "Unknown Company"
 
     def generate_auto_rating(current_text, previous_text):
@@ -118,9 +120,11 @@ else:
     history_file = "management_ratings.csv"
     history_df = pd.read_csv(history_file) if os.path.exists(history_file) else pd.DataFrame(columns=["Date", "Company", "Quarter"] + categories + ["Average"])
 
-    if uploaded_files and len(uploaded_files) == 2:
-        st.success("Two transcripts uploaded. Current + Previous comparison enabled.")
-        current_file, previous_file = uploaded_files
+    if uploaded_files and len(uploaded_files) in [2, 3, 4]:
+        st.success(f"{len(uploaded_files)} transcripts uploaded. Comparison ready.")
+        uploaded_files = sorted(uploaded_files, key=lambda x: x.name)
+        current_file = uploaded_files[-1]
+        previous_file = uploaded_files[-2]
 
         current_text = extract_text_from_pdf(current_file)
         previous_text = extract_text_from_pdf(previous_file)
@@ -164,7 +168,7 @@ else:
                 st.download_button("📥 Download PDF Report", data=pdf_data, file_name=f"{company_name}_{quarter}_Management_Report.pdf", mime="application/pdf")
 
     elif uploaded_files:
-        st.warning("Please upload exactly two PDF files – current and previous quarter.")
+        st.warning("Please upload between 2 to 4 PDF files – current and previous quarter.")
 
     st.subheader("📈 Historical Ratings")
     if not history_df.empty:
