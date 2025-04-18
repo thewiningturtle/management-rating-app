@@ -88,7 +88,7 @@ else:
         {'ratings': {'category': rating, ...}, 'justification': {'category': 'justification text', ...}, 'red_flags': ['red flag 1', 'red flag 2', ...]}
         """
 
-        response = openai.ChatCompletion.create(
+        response = openai.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": system_prompt},
