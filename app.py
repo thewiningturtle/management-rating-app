@@ -52,19 +52,40 @@ else:
         openai.api_key = st.secrets["OPENAI_API_KEY"]
 
         system_prompt = """
-        Evaluate the management strictly and unbiasedly. Rate (0-5) on:
-        1. Strategy & Vision
-        2. Execution & Delivery
-        3. Handling Tough Phases
-        4. Communication Clarity
-        5. Capital Allocation
-        6. Governance & Integrity (Consider red flags like management stake selling, frequent leadership changes, fraud)
-        7. Outlook & Realism
+        Evaluate management strictly and unbiasedly based on the following categories (rate 0-5):
 
-        Provide detailed justification for each rating, highlight red flags if present.
+        1. Strategy & Vision:
+           - Is strategy clear and realistic?
+           - Check if the company diversifies unnecessarily into unrelated sectors or raises funds frequently without clear deployment plans.
+
+        2. Execution & Delivery:
+           - Does management deliver consistently?
+           - Check for overpromising and exaggerating minor developments.
+
+        3. Handling Tough Phases:
+           - How effectively does management navigate through challenging times?
+           - Check if there are frequent exits of key personnel.
+
+        4. Communication Clarity:
+           - Is management clear and transparent in communications?
+           - Check for constant media presence without substantial progress and excessive buzzword usage.
+
+        5. Capital Allocation:
+           - Evaluate efficiency and transparency of capital allocation.
+           - Check specifically for excessive related-party transactions.
+
+        6. Governance & Integrity:
+           - Is there robust corporate governance?
+           - Highlight issues like high promoter pledging, extravagant promoter lifestyle, or management selling personal stakes.
+
+        7. Outlook & Realism:
+           - Are future plans realistic and justified?
+           - Check if management consistently talks big or promises unrealistically high performance.
+
+        Provide a detailed justification for each rating. Clearly highlight any red flags identified based on the above checkpoints.
 
         Output strictly as a dictionary:
-        {'ratings': {'category': rating, ...}, 'justification': {'category': 'justification text', ...}, 'red_flags': ['red flag 1', ...]}
+        {'ratings': {'category': rating, ...}, 'justification': {'category': 'justification text', ...}, 'red_flags': ['red flag 1', 'red flag 2', ...]}
         """
 
         response = openai.ChatCompletion.create(
