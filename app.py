@@ -41,6 +41,15 @@ else:
         "Governance & Integrity", "Outlook & Realism"
     ]
 
+    normalization_map = {
+        "Operational Performance": "Execution & Delivery",
+        "Financial Performance": "Capital Allocation",
+        "Strategic Growth Initiatives": "Strategy & Vision",
+        "Forward-looking Statements": "Outlook & Realism",
+        "Overall Transparency": "Governance & Integrity",
+        "Investor Relations": "Governance & Integrity"
+    }
+
     def extract_text_from_pdf(pdf_file):
         doc = fitz.open(stream=pdf_file.read(), filetype="pdf")
         return "".join([page.get_text() for page in doc])
@@ -68,6 +77,14 @@ else:
             if row.get("shares_sold", 0) > 100000:
                 red_flags.append(f"Large Insider Sale: {row.get('insider_name')} sold {row.get('shares_sold')} shares on {row.get('date')}")
         return red_flags
+
+    def normalize_ratings(ratings):
+        normalized = {}
+        for key, value in ratings.items():
+            core_key = normalization_map.get(key, key)
+            if core_key in categories:
+                normalized[core_key] = value
+        return normalized
 
     def generate_auto_rating(current_text, previous_text, news_snippets, insider_flags, leadership_note):
         openai.api_key = st.secrets["OPENAI_API_KEY"]
@@ -105,7 +122,6 @@ else:
             ]
         )
 
-        # Try parsing with safe fallback if incomplete
         try:
             return ast.literal_eval(response.choices[0].message.content)
         except Exception as e:
@@ -162,34 +178,35 @@ else:
                 insider_flags = parse_insider_flags(insider_df)
 
             result = generate_auto_rating(current_text, previous_text, news_snippets, insider_flags, leadership_note)
-            ratings = result.get('ratings', {})
+            ratings_raw = result.get('ratings', {})
+            ratings = normalize_ratings(ratings_raw)
             justifications = result.get('justification', {})
             red_flags = result.get('red_flags', [])
 
             missing = [cat for cat in categories if cat not in ratings]
 
             if missing:
-                st.error(f"⚠️ Rating generation incomplete. Missing categories: {', '.join(missing)}")
-                st.json(ratings)
-            else:
-                avg_score = round(sum(ratings.values()) / len(categories), 4)
+                for m in missing:
+                    ratings[m] = None
 
-                new_row = {
-                    "Date": datetime.now().strftime("%Y-%m-%d"),
-                    "Company": company_name,
-                    "Quarter": quarter,
-                    **ratings,
-                    "Average": avg_score
-                }
+            avg_score = round(sum([v for v in ratings.values() if v is not None]) / len([v for v in ratings.values() if v is not None]), 4)
 
-                history_df = history_df[
-                    ~((history_df["Company"] == company_name) & (history_df["Quarter"] == quarter))
-                ]
-                history_df = pd.concat([history_df, pd.DataFrame([new_row])], ignore_index=True)
-                history_df.to_csv(history_file, index=False)
+            new_row = {
+                "Date": datetime.now().strftime("%Y-%m-%d"),
+                "Company": company_name,
+                "Quarter": quarter,
+                **ratings,
+                "Average": avg_score
+            }
 
-                pdf_data = create_pdf_report(company_name, quarter, ratings, justifications, red_flags)
-                st.download_button("📥 Download PDF Report", data=pdf_data, file_name=f"{company_name}_{quarter}_Management_Report.pdf", mime="application/pdf")
+            history_df = history_df[
+                ~((history_df["Company"] == company_name) & (history_df["Quarter"] == quarter))
+            ]
+            history_df = pd.concat([history_df, pd.DataFrame([new_row])], ignore_index=True)
+            history_df.to_csv(history_file, index=False)
+
+            pdf_data = create_pdf_report(company_name, quarter, ratings, justifications, red_flags)
+            st.download_button("📥 Download PDF Report", data=pdf_data, file_name=f"{company_name}_{quarter}_Management_Report.pdf", mime="application/pdf")
 
     elif uploaded_files:
         st.warning("Please upload at least 2 PDF files for comparison.")
