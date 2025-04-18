@@ -10,6 +10,7 @@ import ast
 import re
 import feedparser
 from fpdf import FPDF
+import json
 
 load_dotenv()
 
@@ -100,20 +101,19 @@ else:
           - Governance & Integrity
           - Outlook & Realism
 
-        Also compare CURRENT vs PREVIOUS quarter for delivery gaps.
-        Flag red flags such as:
+        Compare CURRENT vs PREVIOUS quarter for delivery gaps.
+        Flag red flags like:
           • Insider selling
           • Leadership exits
           • Big talk vs weak action
           • Buzzword abuse
-          • Overhype in media
 
         Context:
           News: {news_snippets}
           Insider: {insider_flags}
           Leadership: {leadership_note}
 
-        Output:
+        Respond strictly in this JSON format:
         {{
           "ratings": {{"category": score}},
           "justification": {{"category": "reason"}},
@@ -130,7 +130,9 @@ else:
         )
 
         try:
-            return ast.literal_eval(response.choices[0].message.content)
+            content = response.choices[0].message.content.strip().replace("“", '"').replace("”", '"')
+            parsed = json.loads(content)
+            return parsed
         except Exception:
             st.error("⚠️ Failed to parse AI output. Please check model formatting.")
             return {}
@@ -187,14 +189,18 @@ else:
 
             result = generate_auto_rating(current_text, previous_text, news_snippets, insider_flags, leadership_note)
             ratings_raw = result.get('ratings', {})
-            ratings = normalize_ratings(ratings_raw)
             justifications = result.get('justification', {})
             red_flags = result.get('red_flags', [])
 
-            if len(ratings_raw) < len(categories):
-                st.warning("⚠️ Rating generation incomplete. Some categories are missing. Please retry or verify the AI response.")
+            ratings = normalize_ratings(ratings_raw)
 
-            avg_score = round(sum(ratings.values()) / len(ratings), 4)
+            # Remove invalid ratings
+            for key in ratings:
+                if ratings[key] > 0 and not justifications.get(key):
+                    ratings[key] = None
+
+            valid_scores = [v for v in ratings.values() if isinstance(v, int)]
+            avg_score = round(sum(valid_scores) / len(valid_scores), 4) if valid_scores else 0
 
             new_row = {
                 "Date": datetime.now().strftime("%Y-%m-%d"),
