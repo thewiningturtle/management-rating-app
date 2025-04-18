@@ -105,7 +105,12 @@ else:
             ]
         )
 
-        return ast.literal_eval(response.choices[0].message.content)
+        # Try parsing with safe fallback if incomplete
+        try:
+            return ast.literal_eval(response.choices[0].message.content)
+        except Exception as e:
+            st.error("⚠️ Failed to parse AI output. Please check model formatting.")
+            return {}
 
     def create_pdf_report(company, quarter, ratings, justifications, red_flags):
         pdf = FPDF()
@@ -161,8 +166,10 @@ else:
             justifications = result.get('justification', {})
             red_flags = result.get('red_flags', [])
 
-            if not all(cat in ratings and isinstance(ratings[cat], (int, float)) for cat in categories):
-                st.error("⚠️ Rating generation incomplete. Some categories are missing. Please retry or verify the AI response.")
+            missing = [cat for cat in categories if cat not in ratings]
+
+            if missing:
+                st.error(f"⚠️ Rating generation incomplete. Missing categories: {', '.join(missing)}")
                 st.json(ratings)
             else:
                 avg_score = round(sum(ratings.values()) / len(categories), 4)
